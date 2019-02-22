@@ -4,11 +4,11 @@ import random
 import re
 import string
 import itertools
-from sklearn.svm import LinearSVC
-from sklearn.feature_selection import SelectFromModel
+#from sklearn.svm import LinearSVC
+#from sklearn.feature_selection import SelectFromModel
 import time
 import pickle
-from pubmed_lookup import PubMedLookup, Publication
+#from pubmed_lookup import PubMedLookup, Publication
 
 def get_json_plasmids(filename):
     start = time.time()
@@ -135,8 +135,10 @@ def get_num_plasmids_per_pi(json_plasmids, min_num_plasmids_cutoff, max_seq_leng
 def parseTree(obj):  
     if isinstance(obj,int) or isinstance(obj,type(None)): 
         pass
-    elif isinstance(obj,str):
-        entry = ''.join(re.sub(r'\W+', '', obj))
+    # added unicode type parsing from Python 3
+    elif isinstance(obj,str) or isinstance(obj,unicode):
+        #entry = ''.join(re.sub(r'\W+', '', obj))
+        entry = obj
         if len(obj)>0 and len(obj)<60:
             leaf_array.append(entry.lower())
     elif isinstance(obj,list):
@@ -162,6 +164,11 @@ def get_seqs_annotations(json_plasmids, pi_plasmid_dict, filter_length, max_seq_
     pis = [''] * num_remaining_plasmids
     plasmid_names = [''] * num_remaining_plasmids
     seqs = [''] * num_remaining_plasmids
+    # Get vector types
+    vector_type = [''] * num_remaining_plasmids
+    resistance  = [''] * num_remaining_plasmids
+    insert_spec = [''] * num_remaining_plasmids
+    
     annotations = [[] for i in range(num_remaining_plasmids)]
     count = 0
     global leaf_array
@@ -204,21 +211,31 @@ def get_seqs_annotations(json_plasmids, pi_plasmid_dict, filter_length, max_seq_
                         plasmid_names[count] = p["name"]
                     else:
                         plasmid_names[count] = "None"
-                    
+
+                    leaf_array = []
+                    if len(p["cloning"]["vector_types"]) > 0:
+                        parseTree(p["cloning"]["vector_types"])
+                        
+                    vector_type[count] = "; ".join(leaf_array)
+                        
                     leaf_array = []
                     parseTree(p['bacterial_resistance'])
-                    parseTree(p['cloning'])
+                    resistance[count] = "; ".join(leaf_array)
+                    leaf_array = []
+                    #parseTree(p['cloning'])
                     if len(p['inserts']) > 0:
-                        parseTree(p['inserts'][0]['alt_names'])
-                        parseTree(p['inserts'][0]['cloning'])
+                        parseTree(p['inserts'][0]['species'])
+                        insert_spec[count] = "; ".join(leaf_array)
+                        leaf_array = []
+                        #parseTree(p['inserts'][0]['cloning'])
                         if len(p['inserts'][0]['entrez_gene']) > 0:
                             parseTree(p['inserts'][0]['entrez_gene'][0]['gene'])
-                    annotations[count] = leaf_array
+                    annotations[count] = "; ".join(leaf_array)
                     count += 1
     end = time.time()
     print("Getting DNA seqs and annotations for remaining PIs took", end-start, "seconds")
     print("")
-    return [pis, seqs, annotations, plasmid_names]
+    return [pis, seqs, annotations, plasmid_names, vector_type, resistance, insert_spec]
 
 def permute_order(pis, seqs, annotations):
     permute = np.random.permutation(len(pis))
@@ -279,10 +296,11 @@ def convert_annotations(annotations):
                 sorted_annotations_list.append(j)
     sorted_annotations_list.sort()
     print("Total number of unique annotations across remaining plasmids =", len(sorted_annotations_list))
-    annotations_bow = np.zeros((len(annotations),len(sorted_annotations_list)))
-    for k in range(len(annotations)):
-        for a in annotations[k]:
-            annotations_bow[k][sorted_annotations_list.index(a)] += 1
+    #annotations_bow = np.zeros((len(annotations),len(sorted_annotations_list)))
+    annotations_bow = np.zeros((1,1))
+    #for k in range(len(annotations)):
+    #    for a in annotations[k]:
+    #        annotations_bow[k][sorted_annotations_list.index(a)] += 1
     end = time.time()
     print("Bag of words conversion took", end-start, "seconds")
     print("")
@@ -341,7 +359,7 @@ def separate_train_val_test(params, sorted_pi_list, sorted_annotations, sorted_r
             val_pi_labels_onehot[val_row] = pi_labels_onehot[i]
             val_dna_seqs[val_row] = dna_seqs[i]
             val_annotation_labels[val_row] = annotation_labels[i]
-            val_reduced_annotation_labels_bow[val_row] = reduced_annotation_labels_bow[i]
+            #val_reduced_annotation_labels_bow[val_row] = reduced_annotation_labels_bow[i]
             pi_val_count[sorted_pi_list.index(pi_labels[i])] += 1
             val_row += 1
         elif pi_test_count[sorted_pi_list.index(pi_labels[i])] < test_plasmids_per_pi:
@@ -349,7 +367,7 @@ def separate_train_val_test(params, sorted_pi_list, sorted_annotations, sorted_r
             test_pi_labels_onehot[test_row] = pi_labels_onehot[i]
             test_dna_seqs[test_row] = dna_seqs[i]
             test_annotation_labels[test_row] = annotation_labels[i]
-            test_reduced_annotation_labels_bow[test_row] = reduced_annotation_labels_bow[i]
+            #test_reduced_annotation_labels_bow[test_row] = reduced_annotation_labels_bow[i]
             pi_test_count[sorted_pi_list.index(pi_labels[i])] += 1
             test_row += 1
         else:
@@ -357,7 +375,7 @@ def separate_train_val_test(params, sorted_pi_list, sorted_annotations, sorted_r
             train_pi_labels_onehot[train_row] = pi_labels_onehot[i]
             train_dna_seqs[train_row] = dna_seqs[i]
             train_annotation_labels[train_row] = annotation_labels[i]
-            train_reduced_annotation_labels_bow[train_row] = reduced_annotation_labels_bow[i]
+            #train_reduced_annotation_labels_bow[train_row] = reduced_annotation_labels_bow[i]
             train_row += 1
     
     cl_weight = {}
@@ -369,7 +387,7 @@ def separate_train_val_test(params, sorted_pi_list, sorted_annotations, sorted_r
     for y in cl_weight.keys():
         cl_weight[y] = len(cl_weight)*float(cl_weight[y])/float(sumval)
     
-    t = '/mnt/'
+    t = '/vol/ml/joverbeek/'
     np.save(t + 'params.out', params)
     pickle.dump(sorted_pi_list, open(t + "sorted_pi_list.out", "wb"))
     pickle.dump(sorted_annotations, open(t + "sorted_annotations.out", "wb"))

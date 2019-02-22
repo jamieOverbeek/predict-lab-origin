@@ -11,14 +11,20 @@ from keras.callbacks import ModelCheckpoint
 from keras.layers.normalization import BatchNormalization
 import time
 from keras.optimizers import SGD
-from keras.models import load_model 
+from keras.models import load_model
+import os
+
+# Set Keras to use only 1 GPU
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
+data_dir = "/vol/ml/joverbeek/"
 
 # load data
-train_pi_labels_onehot = np.load('/mnt/train_pi_labels_onehot.out.npy')
-train_dna_seqs = pickle.load(open('/mnt/train_dna_seqs.out', 'rb'))
-cl_weight = pickle.load(open('/mnt/class_weight.out', 'rb'))
-val_pi_labels_onehot = np.load('/mnt/val_pi_labels_onehot.out.npy')
-val_dna_seqs = pickle.load(open('/mnt/val_dna_seqs.out', 'rb'))
+train_pi_labels_onehot = np.load(data_dir + 'train_pi_labels_onehot.out.npy')
+train_dna_seqs = pickle.load(open(data_dir + 'train_dna_seqs.out', 'rb'))
+cl_weight = pickle.load(open(data_dir + 'class_weight.out', 'rb'))
+val_pi_labels_onehot = np.load(data_dir + 'val_pi_labels_onehot.out.npy')
+val_dna_seqs = pickle.load(open(data_dir + 'val_dna_seqs.out', 'rb'))
 val_dna_seqs_onehot = np.transpose(convert_onehot2D(val_dna_seqs), axes=(0,2,1))
 num_classes = train_pi_labels_onehot.shape[1]
 dna_bp_length = len(train_dna_seqs[0])
@@ -49,7 +55,7 @@ checkpointer = ModelCheckpoint(filepath="checkpoint.hdf5", monitor="val_acc", mo
 early_stopping = EarlyStopping(monitor='val_acc', min_delta=0, patience=10, mode='auto', verbose=1)
 print(model.summary())
 
-num_chunks = 6 # number of chunks the data is split into
+num_chunks = 10 # number of chunks the data is split into
 
 # initialize
 max_val_acc = 0.0
@@ -65,8 +71,8 @@ epoch_val_loss = np.zeros((total_epoch,1))
 for epoch in range(total_epoch):
     print("Epoch =", epoch+1, "out of", total_epoch)
     for f in range(num_chunks-1):
-        X_train = np.load("/mnt/data"+str(f)+".npy")
-        y_train = np.load("/mnt/labels"+str(f)+".npy")
+        X_train = np.load(data_dir + "data"+str(f)+".npy")
+        y_train = np.load(data_dir + "labels"+str(f)+".npy")
         history = model.fit(X_train, y_train, batch_size = min_batch_size, \
               validation_split=0.0, nb_epoch=1, verbose=1, class_weight=cl_weight)
         
@@ -75,8 +81,8 @@ for epoch in range(total_epoch):
         epoch_train_loss[epoch,f] = history.history['loss'][0]
 
     # train final chunk and do validation
-    X_train = np.load("/mnt/data"+str(num_chunks-1)+".npy")
-    y_train = np.load("/mnt/labels"+str(num_chunks-1)+".npy")  
+    X_train = np.load(data_dir + "data"+str(num_chunks-1)+".npy")
+    y_train = np.load(data_dir + "labels"+str(num_chunks-1)+".npy")  
     history = model.fit(X_train, y_train, batch_size = min_batch_size, \
               validation_data=(val_dna_seqs_onehot, val_pi_labels_onehot), nb_epoch=1, verbose=1, class_weight=cl_weight, \
               callbacks=[checkpointer,early_stopping])

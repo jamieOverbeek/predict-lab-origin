@@ -12,14 +12,19 @@ from keras.layers.normalization import BatchNormalization
 import time
 from keras.optimizers import SGD
 from keras.models import load_model 
+import os
+
+# Set Keras to use only 1 GPU
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+data_dir = "/vol/ml/joverbeek/"
 
 # load data
-val_pi_labels_onehot = np.load('/mnt/val_pi_labels_onehot.out.npy')
-val_dna_seqs = pickle.load(open('/mnt/val_dna_seqs.out', 'rb'))
+val_pi_labels_onehot = np.load(data_dir + 'val_pi_labels_onehot.out.npy')
+val_dna_seqs = pickle.load(open(data_dir + 'val_dna_seqs.out', 'rb'))
 val_dna_seqs_onehot = np.transpose(convert_onehot2D(val_dna_seqs), axes=(0,2,1))
-test_pi_labels = pickle.load(open('/mnt/test_pi_labels.out', 'rb'))
-test_pi_labels_onehot = np.load('/mnt/test_pi_labels_onehot.out.npy')
-test_dna_seqs = pickle.load(open('/mnt/test_dna_seqs.out', 'rb'))
+test_pi_labels = pickle.load(open(data_dir + 'test_pi_labels.out', 'rb'))
+test_pi_labels_onehot = np.load(data_dir + 'test_pi_labels_onehot.out.npy')
+test_dna_seqs = pickle.load(open(data_dir + 'test_dna_seqs.out', 'rb'))
 test_dna_seqs_onehot = np.transpose(convert_onehot2D(test_dna_seqs), axes=(0,2,1))
 
 # load trained model
@@ -46,13 +51,22 @@ print("%s: %.2f%%" % (model.metrics_names[1], test_scores[1]*100))
 ranking_per_test_plasmid = np.zeros(test_dna_seqs_onehot.shape[0])
 lab_num_correct_test_plasmid = np.zeros(test_pi_labels_onehot.shape[1])
 
+n_labs = test_pi_labels_onehot.shape[1]
+
 # compute the ranking of the correct lab for each plasmid
 # compute the number plasmids correct per lab
 for i in range(test_dna_seqs_onehot.shape[0]):
     predicted_vector = model.predict(np.expand_dims(test_dna_seqs_onehot[i], axis=0),verbose=0)[0]
     actual_index = np.argmax(test_pi_labels_onehot[i]) 
     predicted_argsort = np.argsort(predicted_vector)
-    ranking_per_test_plasmid[i] = (np.where(predicted_argsort==actual_index)[0][0] - 827)*-1
+    ranking_per_test_plasmid[i] = (np.where(predicted_argsort==actual_index)[0][0] - n_labs)*-1
     if ranking_per_test_plasmid[i] == 1:
         lab_num_correct_test_plasmid[actual_index] += 1
+
+np.save("predicted_lab_match.npy", ranking_per_test_plasmid)
+
+for layer in model.layers:
+    weights = layer.get_weights()
+    np.save("filter_weights", weights)
+    
 print("Making predictions for full test set took " + str(end-start) + " seconds")
